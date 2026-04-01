@@ -2,9 +2,15 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-import 'demo_pages.dart';
+import 'book/book_experience_constants.dart';
+import 'demo/animation/demo_animation.dart';
+import 'demo/demo_page_catalog.dart';
+import 'demo/responsive/demo_responsive.dart';
+import 'demo/shared/hover_press_surface.dart';
 
 enum TurnDirection { forward, backward }
+
+enum _TurnAnimationOutcome { complete, cancel }
 
 class BookExperienceScreen extends StatefulWidget {
   const BookExperienceScreen({super.key});
@@ -13,34 +19,52 @@ class BookExperienceScreen extends StatefulWidget {
   State<BookExperienceScreen> createState() => _BookExperienceScreenState();
 }
 
-class _BookExperienceScreenState extends State<BookExperienceScreen>
-    with TickerProviderStateMixin {
-  late final AnimationController _coverOpen = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 900),
-  );
-
-  late final AnimationController _turn = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 560),
-  );
-
-  late final List<Widget> _pages = buildDemoPages(onRestartBook: _restartBook);
+class _BookExperienceScreenState
+    extends ManagedTickerState<BookExperienceScreen> {
+  late final AnimationController _coverOpen;
+  late final AnimationController _turn;
 
   int _index = 0;
+  bool _bookUnlocked = false;
   bool _coverHover = false;
   bool _coverPressed = false;
   TurnDirection? _activeTurn;
   TurnDirection? _dragDirection;
   bool _dragInProgress = false;
-
-  bool get _bookUnlocked => _coverOpen.value > 0.995;
+  _TurnAnimationOutcome? _pendingTurnOutcome;
+  double? _pendingWarmupTurnDelta;
 
   @override
-  void dispose() {
-    _coverOpen.dispose();
-    _turn.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _coverOpen = createAnimationController(duration: BookDurations.coverOpen)
+      ..addListener(_syncBookUnlockState);
+    _turn = createAnimationController(duration: BookDurations.pageTurn)
+      ..addStatusListener(_handleTurnStatus);
+  }
+
+  void _syncBookUnlockState() {
+    final unlocked = _coverOpen.value > BookThresholds.unlockProgress;
+    if (mounted && unlocked != _bookUnlocked) {
+      setState(() => _bookUnlocked = unlocked);
+    }
+  }
+
+  void _handleTurnStatus(AnimationStatus status) {
+    if (!mounted || _activeTurn == null || _pendingTurnOutcome == null) {
+      return;
+    }
+
+    if (status == AnimationStatus.completed &&
+        _pendingTurnOutcome == _TurnAnimationOutcome.complete) {
+      _finishTurn(_activeTurn!);
+      return;
+    }
+
+    if (status == AnimationStatus.dismissed &&
+        _pendingTurnOutcome == _TurnAnimationOutcome.cancel) {
+      _cancelTurn();
+    }
   }
 
   void _openCover() {
@@ -57,19 +81,44 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
     }
     setState(() {
       _index = 0;
+      _bookUnlocked = false;
       _activeTurn = null;
       _dragDirection = null;
-      _turn.value = 0;
       _dragInProgress = false;
+      _pendingTurnOutcome = null;
+      _pendingWarmupTurnDelta = null;
+      _turn.value = 0;
     });
     _coverOpen.animateBack(0, curve: Curves.easeInOutCubic);
+  }
+
+  void _scheduleTurnWarmup(VoidCallback action) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      action();
+    });
+  }
+
+  void _flushPendingWarmupTurnDelta() {
+    final delta = _pendingWarmupTurnDelta;
+    if (delta == null ||
+        !_dragInProgress ||
+        _turn.isAnimating ||
+        _activeTurn == null) {
+      _pendingWarmupTurnDelta = null;
+      return;
+    }
+    _pendingWarmupTurnDelta = null;
+    _turn.value = (_turn.value + delta).clamp(0.0, 1.0);
   }
 
   void _startButtonTurn(TurnDirection direction) {
     if (_activeTurn != null || _turn.isAnimating || !_bookUnlocked) {
       return;
     }
-    if (direction == TurnDirection.forward && _index >= _pages.length - 1) {
+    if (direction == TurnDirection.forward && _index >= demoPageCount - 1) {
       return;
     }
     if (direction == TurnDirection.backward && _index <= 0) {
@@ -78,19 +127,28 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
 
     setState(() {
       _activeTurn = direction;
+      _dragDirection = null;
+      _dragInProgress = false;
+      _pendingTurnOutcome = _TurnAnimationOutcome.complete;
+      _pendingWarmupTurnDelta = null;
+      _turn.value = 0;
     });
 
-    _turn.forward(from: 0).then((_) {
-      if (!mounted) {
+    _scheduleTurnWarmup(() {
+      if (_activeTurn != direction ||
+          _pendingTurnOutcome != _TurnAnimationOutcome.complete ||
+          _turn.isAnimating) {
         return;
       }
-      _finishTurn(direction);
+      _turn.animateTo(1, curve: Curves.easeOutCubic);
     });
   }
 
   void _finishTurn(TurnDirection direction) {
     setState(() {
       _index += direction == TurnDirection.forward ? 1 : -1;
+      _pendingTurnOutcome = null;
+      _pendingWarmupTurnDelta = null;
       _turn.value = 0;
       _activeTurn = null;
       _dragDirection = null;
@@ -100,6 +158,8 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
 
   void _cancelTurn() {
     setState(() {
+      _pendingTurnOutcome = null;
+      _pendingWarmupTurnDelta = null;
       _turn.value = 0;
       _activeTurn = null;
       _dragDirection = null;
@@ -113,6 +173,8 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
     }
     _dragInProgress = true;
     _dragDirection = null;
+    _pendingTurnOutcome = null;
+    _pendingWarmupTurnDelta = null;
     _turn.value = 0;
   }
 
@@ -122,15 +184,21 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
     }
 
     if (_dragDirection == null) {
-      if (details.delta.dx < -1.2 && _index < _pages.length - 1) {
+      if (details.delta.dx < -BookThresholds.coverDragDirectionDelta &&
+          _index < demoPageCount - 1) {
         _dragDirection = TurnDirection.forward;
-      } else if (details.delta.dx > 1.2 && _index > 0) {
+      } else if (details.delta.dx > BookThresholds.coverDragDirectionDelta &&
+          _index > 0) {
         _dragDirection = TurnDirection.backward;
       }
       if (_dragDirection != null) {
-        setState(() {
-          _activeTurn = _dragDirection;
-        });
+        final initialDelta = _dragDirection == TurnDirection.forward
+            ? -details.delta.dx / pageWidth
+            : details.delta.dx / pageWidth;
+        setState(() => _activeTurn = _dragDirection);
+        _pendingWarmupTurnDelta = initialDelta;
+        _scheduleTurnWarmup(_flushPendingWarmupTurnDelta);
+        return;
       }
     }
 
@@ -142,164 +210,332 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
         ? -details.delta.dx / pageWidth
         : details.delta.dx / pageWidth;
 
+    if (_pendingWarmupTurnDelta != null) {
+      _pendingWarmupTurnDelta = _pendingWarmupTurnDelta! + delta;
+      return;
+    }
+
     _turn.value = (_turn.value + delta).clamp(0.0, 1.0);
   }
 
   void _handlePageDragEnd(DragEndDetails details) {
     if (!_dragInProgress || _dragDirection == null || _activeTurn == null) {
       _dragInProgress = false;
+      _pendingWarmupTurnDelta = null;
       return;
     }
 
-    final direction = _dragDirection!;
-    final shouldFinish = _turn.value > 0.35;
+    _flushPendingWarmupTurnDelta();
+    final shouldFinish = _turn.value > BookThresholds.pageTurnCommitProgress;
+    _pendingTurnOutcome = shouldFinish
+        ? _TurnAnimationOutcome.complete
+        : _TurnAnimationOutcome.cancel;
 
     if (shouldFinish) {
-      _turn.animateTo(1, curve: Curves.easeOutCubic).then((_) {
-        if (!mounted) {
-          return;
-        }
-        _finishTurn(direction);
-      });
+      _turn.animateTo(1, curve: Curves.easeOutCubic);
       return;
     }
 
-    _turn.animateBack(0, curve: Curves.easeOutQuad).then((_) {
-      if (!mounted) {
-        return;
-      }
-      _cancelTurn();
-    });
+    _turn.animateBack(0, curve: Curves.easeOutQuad);
   }
 
   void _handleCoverDragUpdate(DragUpdateDetails details, double width) {
     if (width <= 0 || _coverOpen.value >= 1) {
       return;
     }
-    final delta = (-details.delta.dx / width).clamp(-0.08, 0.08);
+    final delta = (-details.delta.dx / width).clamp(
+      -BookMotion.coverDragDeltaClamp,
+      BookMotion.coverDragDeltaClamp,
+    );
     _coverOpen.value = (_coverOpen.value + delta).clamp(0.0, 1.0);
   }
 
   void _handleCoverDragEnd(DragEndDetails details) {
-    if (_coverOpen.value > 0.28) {
+    if (_coverOpen.value > BookThresholds.coverOpenSnapProgress) {
       _openCover();
-    } else {
-      _closeCover();
+      return;
     }
+    _closeCover();
+  }
+
+  Widget _buildPage(int index) {
+    return buildDemoPage(index, onRestartBook: _restartBook);
+  }
+
+  Widget? _buildIncomingPage() {
+    if (_activeTurn == null) {
+      return null;
+    }
+
+    final incomingIndex = _activeTurn == TurnDirection.forward
+        ? _index + 1
+        : _index - 1;
+    if (incomingIndex < 0 || incomingIndex >= demoPageCount) {
+      return null;
+    }
+    return _buildPage(incomingIndex);
   }
 
   @override
   Widget build(BuildContext context) {
-    final merged = Listenable.merge([_coverOpen, _turn]);
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(-0.15, -0.45),
+            radius: 1.45,
+            colors: [Color(0xFF13213E), Color(0xFF0B1020), Color(0xFF04060F)],
+          ),
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(child: _AnimatedGridBackdrop(progress: _coverOpen)),
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final layout = BookLayout.fromConstraints(constraints);
+                  final currentPage = _buildPage(_index);
+                  final incomingPage = _buildIncomingPage();
 
-    return AnimatedBuilder(
-      animation: merged,
-      builder: (context, _) {
-        return Scaffold(
-          body: Container(
-            decoration: const BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment(-0.15, -0.45),
-                radius: 1.45,
-                colors: [
-                  Color(0xFF13213E),
-                  Color(0xFF0B1020),
-                  Color(0xFF04060F),
-                ],
+                  return Column(
+                    children: [
+                      SizedBox(height: layout.narrow ? 4 : 8),
+                      Text(
+                        'Cinematic Click Book',
+                        style: Theme.of(context).textTheme.headlineLarge
+                            ?.copyWith(
+                              fontSize: layout.phone
+                                  ? 24
+                                  : (layout.narrow ? 30 : 38),
+                              letterSpacing: layout.phone
+                                  ? 0.6
+                                  : (layout.narrow ? 1.0 : 1.4),
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(
+                        height: layout.phone ? 4 : (layout.narrow ? 8 : 10),
+                      ),
+                      Text(
+                        _bookUnlocked
+                            ? 'Drag or click to turn pages'
+                            : 'Tap or drag the cover to open',
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.72),
+                          fontSize: layout.phone
+                              ? 12
+                              : (layout.narrow ? 14 : 16),
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(
+                        height: layout.phone ? 8 : (layout.narrow ? 12 : 18),
+                      ),
+                      Expanded(
+                        child: Center(
+                          child: SizedBox(
+                            width: layout.bookWidth,
+                            height: layout.bookHeight,
+                            child: _BookScene(
+                              coverOpen: _coverOpen,
+                              turn: _turn,
+                              currentPage: currentPage,
+                              incomingPage: incomingPage,
+                              activeTurn: _activeTurn,
+                              bookUnlocked: _bookUnlocked,
+                              coverHover: _coverHover,
+                              coverPressed: _coverPressed,
+                              coverCompact: layout.coverCompact,
+                              onPageDragStart: _bookUnlocked
+                                  ? _handlePageDragStart
+                                  : null,
+                              onPageDragUpdate: _bookUnlocked
+                                  ? (details) => _handlePageDragUpdate(
+                                      details,
+                                      layout.bookWidth - 28,
+                                    )
+                                  : null,
+                              onPageDragEnd: _bookUnlocked
+                                  ? _handlePageDragEnd
+                                  : null,
+                              onCoverEnter: () {
+                                if (_coverOpen.value >= 1) {
+                                  return;
+                                }
+                                setState(() => _coverHover = true);
+                              },
+                              onCoverExit: () =>
+                                  setState(() => _coverHover = false),
+                              onCoverTap: _openCover,
+                              onCoverTapDown: () =>
+                                  setState(() => _coverPressed = true),
+                              onCoverTapUp: () =>
+                                  setState(() => _coverPressed = false),
+                              onCoverTapCancel: () =>
+                                  setState(() => _coverPressed = false),
+                              onCoverPanStart: () =>
+                                  setState(() => _coverPressed = true),
+                              onCoverPanUpdate: (details) =>
+                                  _handleCoverDragUpdate(
+                                    details,
+                                    layout.bookWidth,
+                                  ),
+                              onCoverPanEnd: (details) {
+                                setState(() => _coverPressed = false);
+                                _handleCoverDragEnd(details);
+                              },
+                              onCoverPanCancel: () =>
+                                  setState(() => _coverPressed = false),
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: layout.narrow ? 10 : 16),
+                      _BookNavigation(
+                        pageIndex: _index,
+                        pageCount: demoPageCount,
+                        compact: layout.compactNavigation,
+                        locked: !_bookUnlocked,
+                        onPrevious: () =>
+                            _startButtonTurn(TurnDirection.backward),
+                        onNext: () => _startButtonTurn(TurnDirection.forward),
+                      ),
+                      SizedBox(height: layout.narrow ? 8 : 14),
+                    ],
+                  );
+                },
               ),
             ),
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: CustomPaint(
-                      painter: _GridPainter(progress: _coverOpen.value),
-                    ),
-                  ),
-                ),
-                SafeArea(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                    final phone = constraints.maxWidth < 520;
-                    final narrow = constraints.maxWidth < 700;
-                    final short = constraints.maxHeight < 780;
-
-                    final width = min(
-                      constraints.maxWidth * (phone ? 0.97 : (narrow ? 0.96 : 0.92)),
-                      1000.0,
-                    );
-
-                    final height = min(
-                      constraints.maxHeight *
-                          (phone ? 0.82 : (short ? 0.72 : (narrow ? 0.74 : 0.76))),
-                      phone ? 720.0 : (narrow ? 640.0 : 690.0),
-                    );
-
-                      return Column(
-                        children: [
-                          SizedBox(height: narrow ? 4 : 8),
-                          Text(
-                            'Cinematic Click Book',
-                            style: Theme.of(context).textTheme.headlineLarge
-                                ?.copyWith(
-                                  fontSize: narrow ? 30 : 38,
-                                  letterSpacing: narrow ? 1.0 : 1.4,
-                                ),
-                            textAlign: TextAlign.center,
-                          ),
-                          SizedBox(height: phone ? 2 : (narrow ? 4 : 8)),
-                          Text(
-                            'Cinematic Click Book',
-                            style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                              fontSize: phone ? 24 : (narrow ? 30 : 38),
-                              letterSpacing: phone ? 0.6 : (narrow ? 1.0 : 1.4),
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          SizedBox(height: phone ? 4 : (narrow ? 8 : 10)),
-                          Text(
-                            _bookUnlocked
-                                ? 'Drag or click to turn pages'
-                                : 'Tap or drag the cover to open',
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.72),
-                              fontSize: phone ? 12 : (narrow ? 14 : 16),
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          SizedBox(height: phone ? 8 : (narrow ? 12 : 18)),
-                          Expanded(
-                            child: Center(
-                              child: SizedBox(
-                                width: width,
-                                height: height,
-                                child: Stack(
-                                  children: [
-                                    _buildBookBase(width, height),
-                                    if (_coverOpen.value < 0.998)
-                                      _buildCoverLayer(width, height),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: narrow ? 10 : 16),
-                          _buildNavigation(compact: phone || constraints.maxHeight < 720),
-                          SizedBox(height: narrow ? 8 : 14),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
+}
 
-  Widget _buildBookBase(double width, double height) {
+class _AnimatedGridBackdrop extends StatelessWidget {
+  const _AnimatedGridBackdrop({required this.progress});
+
+  final Animation<double> progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: progress,
+        builder: (context, _) {
+          return RepaintBoundary(
+            child: CustomPaint(painter: _GridPainter(progress: progress.value)),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _BookScene extends StatelessWidget {
+  const _BookScene({
+    required this.coverOpen,
+    required this.turn,
+    required this.currentPage,
+    required this.incomingPage,
+    required this.activeTurn,
+    required this.bookUnlocked,
+    required this.coverHover,
+    required this.coverPressed,
+    required this.coverCompact,
+    required this.onPageDragStart,
+    required this.onPageDragUpdate,
+    required this.onPageDragEnd,
+    required this.onCoverEnter,
+    required this.onCoverExit,
+    required this.onCoverTap,
+    required this.onCoverTapDown,
+    required this.onCoverTapUp,
+    required this.onCoverTapCancel,
+    required this.onCoverPanStart,
+    required this.onCoverPanUpdate,
+    required this.onCoverPanEnd,
+    required this.onCoverPanCancel,
+  });
+
+  final Animation<double> coverOpen;
+  final Animation<double> turn;
+  final Widget currentPage;
+  final Widget? incomingPage;
+  final TurnDirection? activeTurn;
+  final bool bookUnlocked;
+  final bool coverHover;
+  final bool coverPressed;
+  final bool coverCompact;
+  final GestureDragStartCallback? onPageDragStart;
+  final GestureDragUpdateCallback? onPageDragUpdate;
+  final GestureDragEndCallback? onPageDragEnd;
+  final VoidCallback onCoverEnter;
+  final VoidCallback onCoverExit;
+  final VoidCallback onCoverTap;
+  final VoidCallback onCoverTapDown;
+  final VoidCallback onCoverTapUp;
+  final VoidCallback onCoverTapCancel;
+  final VoidCallback onCoverPanStart;
+  final GestureDragUpdateCallback onCoverPanUpdate;
+  final GestureDragEndCallback onCoverPanEnd;
+  final VoidCallback onCoverPanCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        _BookBase(
+          bookUnlocked: bookUnlocked,
+          onPageDragStart: onPageDragStart,
+          onPageDragUpdate: onPageDragUpdate,
+          onPageDragEnd: onPageDragEnd,
+          child: _AnimatedBookPageLayers(
+            turn: turn,
+            currentPage: currentPage,
+            incomingPage: incomingPage,
+            activeTurn: activeTurn,
+          ),
+        ),
+        _AnimatedCoverLayer(
+          coverOpen: coverOpen,
+          compact: coverCompact,
+          hover: coverHover,
+          pressed: coverPressed,
+          onEnter: onCoverEnter,
+          onExit: onCoverExit,
+          onTap: onCoverTap,
+          onTapDown: onCoverTapDown,
+          onTapUp: onCoverTapUp,
+          onTapCancel: onCoverTapCancel,
+          onPanStart: onCoverPanStart,
+          onPanUpdate: onCoverPanUpdate,
+          onPanEnd: onCoverPanEnd,
+          onPanCancel: onCoverPanCancel,
+        ),
+      ],
+    );
+  }
+}
+
+class _BookBase extends StatelessWidget {
+  const _BookBase({
+    required this.bookUnlocked,
+    required this.onPageDragStart,
+    required this.onPageDragUpdate,
+    required this.onPageDragEnd,
+    required this.child,
+  });
+
+  final bool bookUnlocked;
+  final GestureDragStartCallback? onPageDragStart;
+  final GestureDragUpdateCallback? onPageDragUpdate;
+  final GestureDragEndCallback? onPageDragEnd;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(32),
@@ -308,10 +544,16 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
           end: Alignment.bottomRight,
           colors: [Color(0xFF1A223B), Color(0xFF0F1529), Color(0xFF090D1A)],
         ),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+        border: Border.all(
+          color: Colors.white.withValues(
+            alpha: BookDecorationTokens.bookFrameBorderAlpha,
+          ),
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.5),
+            color: Colors.black.withValues(
+              alpha: BookDecorationTokens.bookShadowAlpha,
+            ),
             blurRadius: 42,
             offset: const Offset(0, 24),
           ),
@@ -341,24 +583,21 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
             ),
             Positioned.fill(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                padding: const EdgeInsets.all(14),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(24),
                   child: MouseRegion(
                     cursor: SystemMouseCursors.click,
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onHorizontalDragStart: _bookUnlocked
-                          ? _handlePageDragStart
+                      onHorizontalDragStart: bookUnlocked
+                          ? onPageDragStart
                           : null,
-                      onHorizontalDragUpdate: _bookUnlocked
-                          ? (details) =>
-                                _handlePageDragUpdate(details, width - 28)
+                      onHorizontalDragUpdate: bookUnlocked
+                          ? onPageDragUpdate
                           : null,
-                      onHorizontalDragEnd: _bookUnlocked
-                          ? _handlePageDragEnd
-                          : null,
-                      child: _buildPageLayers(),
+                      onHorizontalDragEnd: bookUnlocked ? onPageDragEnd : null,
+                      child: child,
                     ),
                   ),
                 ),
@@ -369,33 +608,50 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
       ),
     );
   }
+}
 
-  Widget _buildPageLayers() {
-    final direction = _activeTurn;
-    if (direction == null) {
-      return RepaintBoundary(child: _pages[_index]);
+class _BookPageLayers extends StatelessWidget {
+  const _BookPageLayers({
+    required this.currentPage,
+    required this.incomingPage,
+    required this.activeTurn,
+    required this.turnValue,
+  });
+
+  final Widget currentPage;
+  final Widget? incomingPage;
+  final TurnDirection? activeTurn;
+  final double turnValue;
+
+  Widget _pageLayer(Widget page, {required bool freezeTickers}) {
+    return TickerMode(
+      enabled: !freezeTickers,
+      child: RepaintBoundary(child: page),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (activeTurn == null || incomingPage == null) {
+      return RepaintBoundary(child: currentPage);
     }
 
-    final incomingIndex = direction == TurnDirection.forward
-        ? _index + 1
-        : _index - 1;
-    if (incomingIndex < 0 || incomingIndex >= _pages.length) {
-      return RepaintBoundary(child: _pages[_index]);
-    }
-
-    final progress = Curves.easeInOut.transform(_turn.value);
+    final incoming = incomingPage!;
+    final progress = turnValue;
+    final freezePageTickers = activeTurn != null;
     final angle =
-        (direction == TurnDirection.forward ? -1 : 1) * progress * (pi / 1.9);
-    final pivot = direction == TurnDirection.forward
+        (activeTurn == TurnDirection.forward ? -1 : 1) * progress * (pi / 1.9);
+    final pivot = activeTurn == TurnDirection.forward
         ? Alignment.centerLeft
         : Alignment.centerRight;
     final translate =
-        (direction == TurnDirection.forward ? 1 : -1) * progress * 24;
-
-    final shadowBegin = direction == TurnDirection.forward
+        (activeTurn == TurnDirection.forward ? 1 : -1) *
+        progress *
+        BookMotion.pageTurnTranslate;
+    final shadowBegin = activeTurn == TurnDirection.forward
         ? Alignment.centerLeft
         : Alignment.centerRight;
-    final shadowEnd = direction == TurnDirection.forward
+    final shadowEnd = activeTurn == TurnDirection.forward
         ? Alignment.centerRight
         : Alignment.centerLeft;
 
@@ -403,19 +659,24 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
       fit: StackFit.expand,
       children: [
         Transform.scale(
-          scale: 0.975 + (0.025 * progress),
-          child: RepaintBoundary(child: _pages[incomingIndex]),
+          scale:
+              BookMotion.incomingPageBaseScale +
+              (BookMotion.incomingPageScaleRange * progress),
+          child: _pageLayer(
+            incoming,
+            freezeTickers: freezePageTickers,
+          ),
         ),
         Transform(
           alignment: pivot,
           transform: Matrix4.identity()
-            ..setEntry(3, 2, 0.0018)
-            ..translateByDouble(translate, 0, 0, 1)
+            ..setEntry(3, 2, BookMotion.pageTurnPerspective)
+            ..translateByDouble(translate, 0.0, 0.0, 1.0)
             ..rotateY(angle),
           child: Stack(
             fit: StackFit.expand,
             children: [
-              RepaintBoundary(child: _pages[_index]),
+              _pageLayer(currentPage, freezeTickers: freezePageTickers),
               Positioned.fill(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
@@ -423,7 +684,10 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
                       begin: shadowBegin,
                       end: shadowEnd,
                       colors: [
-                        Colors.black.withValues(alpha: 0.45 * progress),
+                        Colors.black.withValues(
+                          alpha:
+                              BookDecorationTokens.pageShadowAlpha * progress,
+                        ),
                         Colors.transparent,
                       ],
                     ),
@@ -452,157 +716,285 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
       ],
     );
   }
+}
 
-  Widget _buildCoverLayer(double width, double height) {
-    final progress = Curves.easeOutCubic.transform(_coverOpen.value);
-    final hoverLift = _coverHover ? -12.0 : 0.0;
-    final pressScale = _coverPressed ? 0.985 : 1.0;
-    final compact = width < 560;
+class _AnimatedBookPageLayers extends StatelessWidget {
+  const _AnimatedBookPageLayers({
+    required this.turn,
+    required this.currentPage,
+    required this.incomingPage,
+    required this.activeTurn,
+  });
+
+  final Animation<double> turn;
+  final Widget currentPage;
+  final Widget? incomingPage;
+  final TurnDirection? activeTurn;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: turn,
+      builder: (context, _) {
+        return _BookPageLayers(
+          currentPage: currentPage,
+          incomingPage: incomingPage,
+          activeTurn: activeTurn,
+          turnValue: turn.value,
+        );
+      },
+    );
+  }
+}
+
+class _AnimatedCoverLayer extends StatelessWidget {
+  const _AnimatedCoverLayer({
+    required this.coverOpen,
+    required this.compact,
+    required this.hover,
+    required this.pressed,
+    required this.onEnter,
+    required this.onExit,
+    required this.onTap,
+    required this.onTapDown,
+    required this.onTapUp,
+    required this.onTapCancel,
+    required this.onPanStart,
+    required this.onPanUpdate,
+    required this.onPanEnd,
+    required this.onPanCancel,
+  });
+
+  final Animation<double> coverOpen;
+  final bool compact;
+  final bool hover;
+  final bool pressed;
+  final VoidCallback onEnter;
+  final VoidCallback onExit;
+  final VoidCallback onTap;
+  final VoidCallback onTapDown;
+  final VoidCallback onTapUp;
+  final VoidCallback onTapCancel;
+  final VoidCallback onPanStart;
+  final GestureDragUpdateCallback onPanUpdate;
+  final GestureDragEndCallback onPanEnd;
+  final VoidCallback onPanCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: coverOpen,
+      builder: (context, _) {
+        if (coverOpen.value >= BookThresholds.coverHiddenProgress) {
+          return const SizedBox.shrink();
+        }
+        return _CoverLayer(
+          progressValue: coverOpen.value,
+          compact: compact,
+          hover: hover,
+          pressed: pressed,
+          onEnter: onEnter,
+          onExit: onExit,
+          onTap: onTap,
+          onTapDown: onTapDown,
+          onTapUp: onTapUp,
+          onTapCancel: onTapCancel,
+          onPanStart: onPanStart,
+          onPanUpdate: onPanUpdate,
+          onPanEnd: onPanEnd,
+          onPanCancel: onPanCancel,
+        );
+      },
+    );
+  }
+}
+
+class _CoverLayer extends StatelessWidget {
+  const _CoverLayer({
+    required this.progressValue,
+    required this.compact,
+    required this.hover,
+    required this.pressed,
+    required this.onEnter,
+    required this.onExit,
+    required this.onTap,
+    required this.onTapDown,
+    required this.onTapUp,
+    required this.onTapCancel,
+    required this.onPanStart,
+    required this.onPanUpdate,
+    required this.onPanEnd,
+    required this.onPanCancel,
+  });
+
+  final double progressValue;
+  final bool compact;
+  final bool hover;
+  final bool pressed;
+  final VoidCallback onEnter;
+  final VoidCallback onExit;
+  final VoidCallback onTap;
+  final VoidCallback onTapDown;
+  final VoidCallback onTapUp;
+  final VoidCallback onTapCancel;
+  final VoidCallback onPanStart;
+  final GestureDragUpdateCallback onPanUpdate;
+  final GestureDragEndCallback onPanEnd;
+  final VoidCallback onPanCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = Curves.easeOutCubic.transform(progressValue);
+    final hoverLift = hover ? BookMotion.coverHoverLift : 0.0;
+    final pressScale = pressed ? BookMotion.coverPressedScale : 1.0;
 
     return Positioned.fill(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
-        child: MouseRegion(
-          onEnter: (_) {
-            if (_coverOpen.value >= 1) {
-              return;
-            }
-            setState(() => _coverHover = true);
-          },
-          onExit: (_) => setState(() => _coverHover = false),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _openCover,
-            onTapDown: (_) => setState(() => _coverPressed = true),
-            onTapUp: (_) => setState(() => _coverPressed = false),
-            onTapCancel: () => setState(() => _coverPressed = false),
-            onPanStart: (_) => setState(() => _coverPressed = true),
-            onPanUpdate: (details) => _handleCoverDragUpdate(details, width),
-            onPanEnd: (details) {
-              setState(() => _coverPressed = false);
-              _handleCoverDragEnd(details);
-            },
-            child: Transform(
-              alignment: Alignment.centerLeft,
-              transform: Matrix4.identity()
-                ..setEntry(3, 2, 0.0019)
-                ..translateByDouble(0.0, hoverLift * (1 - progress), 0.0, 1)
-                ..scaleByDouble(pressScale, pressScale, 1.0, 1)
-                ..rotateZ((_coverHover ? -0.012 : 0.0) * (1 - progress))
-                ..rotateY(-progress * pi * 0.93),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(32),
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF2A4B66),
-                      Color(0xFF172745),
-                      Color(0xFF0D162B),
-                    ],
-                  ),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.24),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      blurRadius: 36 + (progress * 8),
-                      offset: const Offset(0, 20),
-                    ),
-                    BoxShadow(
-                      color: const Color(
-                        0xFF6EE4FF,
-                      ).withValues(alpha: 0.18 * (1 - progress)),
-                      blurRadius: 22,
-                      spreadRadius: 1,
-                    ),
+      child: MouseRegion(
+        onEnter: (_) => onEnter(),
+        onExit: (_) => onExit(),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          onTapDown: (_) => onTapDown(),
+          onTapUp: (_) => onTapUp(),
+          onTapCancel: onTapCancel,
+          onPanStart: (_) => onPanStart(),
+          onPanUpdate: onPanUpdate,
+          onPanEnd: onPanEnd,
+          onPanCancel: onPanCancel,
+          child: Transform(
+            alignment: Alignment.centerLeft,
+            transform: Matrix4.identity()
+              ..setEntry(3, 2, BookMotion.coverPerspective)
+              ..translateByDouble(0.0, hoverLift * (1 - progress), 0.0, 1.0)
+              ..scaleByDouble(pressScale, pressScale, 1.0, 1.0)
+              ..rotateZ(
+                BookMotion.coverHoverRotation * (hover ? (1 - progress) : 0.0),
+              )
+              ..rotateY(-progress * pi * BookMotion.coverOpenRotationFactor),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(32),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF2A4B66),
+                    Color(0xFF172745),
+                    Color(0xFF0D162B),
                   ],
                 ),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: 10,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: const BorderRadius.only(
-                            topRight: Radius.circular(32),
-                            bottomRight: Radius.circular(32),
-                          ),
-                          gradient: LinearGradient(
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                            colors: [
-                              Colors.white.withValues(alpha: 0.24),
-                              Colors.transparent,
-                            ],
-                          ),
+                border: Border.all(
+                  color: Colors.white.withValues(
+                    alpha: BookDecorationTokens.sharedBorderAlpha,
+                  ),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(
+                      alpha: BookDecorationTokens.coverShadowAlpha,
+                    ),
+                    blurRadius: 36 + (progress * 8),
+                    offset: const Offset(0, 20),
+                  ),
+                  BoxShadow(
+                    color: const Color(0xFF6EE4FF).withValues(
+                      alpha:
+                          BookDecorationTokens.coverGlowAlpha * (1 - progress),
+                    ),
+                    blurRadius: 22,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 10,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.only(
+                          topRight: Radius.circular(32),
+                          bottomRight: Radius.circular(32),
+                        ),
+                        gradient: LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [
+                            Colors.white.withValues(
+                              alpha: BookDecorationTokens.sharedBorderAlpha,
+                            ),
+                            Colors.transparent,
+                          ],
                         ),
                       ),
                     ),
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        compact ? 20 : 34,
-                        compact ? 20 : 30,
-                        compact ? 20 : 34,
-                        compact ? 20 : 30,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'NEON ATLAS',
-                            style: Theme.of(context).textTheme.headlineMedium
-                                ?.copyWith(
-                                  fontSize: compact ? 20 : 24,
-                                  letterSpacing: compact ? 0.8 : 1.0,
-                                ),
+                  ),
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      compact ? 20 : 34,
+                      compact ? 20 : 30,
+                      compact ? 20 : 34,
+                      compact ? 20 : 30,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'NEON ATLAS',
+                          style: Theme.of(context).textTheme.headlineMedium
+                              ?.copyWith(
+                                fontSize: compact ? 20 : 24,
+                                letterSpacing: compact ? 0.8 : 1.0,
+                              ),
+                        ),
+                        SizedBox(height: compact ? 8 : 10),
+                        Text(
+                          'An interactive click-demo book',
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.78),
+                                fontSize: compact ? 14 : 16,
+                              ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: compact ? 12 : 14,
+                            vertical: compact ? 8 : 10,
                           ),
-                          SizedBox(height: compact ? 8 : 10),
-                          Text(
-                            'An interactive click-demo book',
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(
-                                  color: Colors.white.withValues(alpha: 0.78),
-                                  fontSize: compact ? 14 : 16,
-                                ),
-                          ),
-                          const Spacer(),
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: compact ? 12 : 14,
-                              vertical: compact ? 8 : 10,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            color: Colors.white.withValues(
+                              alpha: BookDecorationTokens.coverHintFillAlpha,
                             ),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              color: Colors.white.withValues(alpha: 0.12),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.24),
+                            border: Border.all(
+                              color: Colors.white.withValues(
+                                alpha: BookDecorationTokens.sharedBorderAlpha,
                               ),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.touch_app, size: 18),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Click or drag left to open',
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(fontSize: compact ? 12 : 14),
-                                ),
-                              ],
-                            ),
                           ),
-                        ],
-                      ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.touch_app, size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Click or drag left to open',
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(fontSize: compact ? 12 : 14),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -610,17 +1002,35 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
       ),
     );
   }
+}
 
-  Widget _buildNavigation({required bool compact}) {
-    final atStart = _index == 0;
-    final atEnd = _index == _pages.length - 1;
-    final locked = !_bookUnlocked;
+class _BookNavigation extends StatelessWidget {
+  const _BookNavigation({
+    required this.pageIndex,
+    required this.pageCount,
+    required this.compact,
+    required this.locked,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final int pageIndex;
+  final int pageCount;
+  final bool compact;
+  final bool locked;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final atStart = pageIndex == 0;
+    final atEnd = pageIndex == pageCount - 1;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          'Page ${_index + 1} / ${_pages.length}',
+          'Page ${pageIndex + 1} / $pageCount',
           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
             color: Colors.white.withValues(alpha: 0.76),
             fontSize: compact ? 14 : 16,
@@ -632,9 +1042,7 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             HoverPressSurface(
-              onTap: locked || atStart
-                  ? null
-                  : () => _startButtonTurn(TurnDirection.backward),
+              onTap: locked || atStart ? null : onPrevious,
               padding: EdgeInsets.symmetric(
                 horizontal: compact ? 14 : 16,
                 vertical: compact ? 10 : 11,
@@ -651,8 +1059,8 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
             ),
             Row(
               mainAxisSize: MainAxisSize.min,
-              children: List.generate(_pages.length, (dotIndex) {
-                final active = dotIndex == _index;
+              children: List<Widget>.generate(pageCount, (dotIndex) {
+                final active = dotIndex == pageIndex;
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 220),
                   margin: EdgeInsets.symmetric(horizontal: compact ? 2 : 3),
@@ -668,9 +1076,7 @@ class _BookExperienceScreenState extends State<BookExperienceScreen>
               }),
             ),
             HoverPressSurface(
-              onTap: locked || atEnd
-                  ? null
-                  : () => _startButtonTurn(TurnDirection.forward),
+              onTap: locked || atEnd ? null : onNext,
               padding: EdgeInsets.symmetric(
                 horizontal: compact ? 14 : 16,
                 vertical: compact ? 10 : 11,

@@ -2,39 +2,27 @@
 
 A premium Flutter showcase built as an interactive digital book for Android, Windows, and Chrome/Web.
 
-## Build/Run Compatibility Status (2026-03-24)
+## Architecture Status (2026-04-01)
 
-A targeted platform compatibility pass was completed with no code-level blockers found.
+A full architectural refactor was completed to address code-review findings around monolithic page structure, eager widget creation, animation lifecycle, duplicated responsive rules, and avoidable rebuild patterns.
 
-- `flutter pub get`: passed
+Verified after refactor:
+
+- `dart format lib test`: passed
 - `flutter analyze`: passed with no issues
+- `flutter test`: passed
 - `flutter build windows`: passed
 - `flutter build apk`: passed
 - `flutter run -d windows --no-resident`: launched successfully
-- `flutter run -d emulator-5554 --no-resident`: launched successfully on Android emulator (`Medium_Phone_API_36.1`)
 
-Current verified result:
-- Windows build + launch path is working.
-- Android build + runtime launch path is working.
+## What This Project Contains
 
-Chrome/Web support:
-- The project is intended to support Chrome/Web as a target.
-- To run in Chrome, the local environment must have Flutter web support enabled and Chrome detected by `flutter devices`.
-- If the `web/` folder is missing, add web platform support before running in Chrome.
-
-Android runtime verification details:
-- Emulator name/id: `Medium_Phone_API_36.1`
-- Runtime device id used: `emulator-5554`
-- Note: an initial transient service-protocol attach error was resolved by restarting `adb` and rerunning `flutter run`.
-
-## What Was Added
-
-- Animated book cover with hinge-style open (click/tap/drag), hover lift on Windows, and press compression.
-- Custom live page-turn system (3D transform + edge shadows + drag-based turning).
-- 10 themed interactive pages with distinct click/drag feedback.
+- Interactive book cover with hinge open animation (click/tap/drag), hover lift on Windows, and press compression.
+- Custom live page-turn system using `Transform/Matrix4` while keeping page content interactive.
+- 10 themed interaction pages with distinct click/drag feedback.
 - Reusable hover/press/focus interaction surface with desktop keyboard activation support.
 - Dark cinematic theme with glow, layered depth, and ambient motion.
-- Final CTA page with multi-step progression and success mood shift.
+- Final CTA page with multi-step progression and restart flow.
 
 ## Experience Structure
 
@@ -56,87 +44,141 @@ Android runtime verification details:
   - App entrypoint.
 
 - `lib/book_demo_app.dart`
-  - App shell, dark theme, typography setup.
+  - App shell, theme, typography.
 
 - `lib/book_experience.dart`
-  - Cover animation, book container, page-turn logic, navigation controls.
+  - Book container, cover interaction, page turn state, navigation, and scene composition.
+
+- `lib/book/book_experience_constants.dart`
+  - Named constants for unlock thresholds, turn thresholds, cover motion, and book-scene decoration values.
+
+- `lib/demo/demo_page_catalog.dart`
+  - Lazy page registry. Builds the active page by index instead of eagerly creating all 10 pages at startup.
+
+- `lib/demo/animation/demo_animation.dart`
+  - Shared animation lifecycle abstractions.
+  - Centralized `AnimationController` creation/disposal helpers.
+  - Shared staggered animation builder.
+
+- `lib/demo/responsive/demo_responsive.dart`
+  - Single source of truth for breakpoints and page/book layout rules.
+  - Shared `BookLayout`, `DemoPageLayout`, and `DemoPageShellLayout` models.
+
+- `lib/demo/shared/hover_press_surface.dart`
+  - Reusable hover/press/focus interaction surface.
+
+- `lib/demo/shared/showcase_page_shell.dart`
+  - Shared visual shell and ambient backdrop for all demo pages.
+
+- `lib/demo/pages/`
+  - `intro_control_deck_page.dart`
+  - `volume_control_page.dart`
+  - `brightness_dimmer_page.dart`
+  - `morph_toggle_page.dart`
+  - `flip_reveal_page.dart`
+  - `mechanical_lever_page.dart`
+  - `notification_bell_page.dart`
+  - `radial_command_wheel_page.dart`
+  - `charge_and_hold_page.dart`
+  - `final_cinematic_cta_page.dart`
 
 - `lib/demo_pages.dart`
-  - Shared page shell (`ShowcasePageShell`), reusable interactive surface (`HoverPressSurface`), and all page interactions (1-10).
+  - Compatibility barrel export for shared demo modules.
+  - No longer owns all pages or builds them eagerly.
 
 - `test/widget_test.dart`
-  - Smoke test confirming app launch and cover visibility.
+  - Smoke tests for app launch, cover visibility, and page navigation.
 
 - `PROJECT_CONTEXT.md`
-  - Context summary and feature ownership notes.
+  - Architecture and ownership notes.
 
-## Packages Added
+## Architectural Rules
 
-- `google_fonts: ^8.0.2`
-  - Used for premium typography (`Orbitron`, `Exo 2`) to avoid generic default styling.
+### Pages
 
-Notes on page-turn package strategy:
-- The book turn uses custom `Transform/Matrix4` animation to keep pages fully live/interactive and stable on desktop/mobile/web.
-- A package-based page-turn was intentionally not integrated to avoid risking interactive-page limitations.
+- One page per file.
+- Shared page chrome lives in `ShowcasePageShell`.
+- Shared interaction surfaces live in `HoverPressSurface`.
+- Page lookup goes through `buildDemoPage(index, ...)` so only the active page and in-flight turn target are built.
+
+### Animation Lifecycle
+
+- `AnimationController` instances are created in `initState`, never as inline field initializers.
+- Controller disposal is centralized through `ManagedSingleTickerState` / `ManagedTickerState`.
+- Derived animations such as intervals and curves are created once in lifecycle-safe helpers, not recreated inside `build()` every frame.
+- Animation completion logic uses `AnimationStatus` listeners instead of timer guesses.
+
+### Responsive Rules
+
+- Breakpoints are centralized in `demo_responsive.dart`.
+- Book-level layout uses `BookLayout`.
+- Page-level compact/short decisions use `DemoPageLayout` and `DemoPageShellLayout`.
+- New pages should extend the shared layout models instead of introducing ad-hoc width/height thresholds.
+
+### Rebuild And Repaint Rules
+
+- `Scaffold` stays static; animation-driven rebuilds are localized to the grid backdrop and book scene.
+- `RepaintBoundary` is applied only around page content layers that benefit from isolation during page turns.
+- Avoid wrapping unrelated ancestors in animation listeners.
 
 ## Run
 
-1. Install dependencies:
-
 ```bash
 flutter pub get
-Run on Windows:
+```
+
+Windows:
+
+```bash
 flutter run -d windows
-Run on Android (device/emulator required):
+```
+
+Android:
+
+```bash
 flutter devices
 flutter run -d <android-device-id>
+```
 
-If your device id is literally android, you can use:
+Chrome/Web:
 
-flutter run -d android
-Run on Chrome/Web:
-
-If web support already exists in the project:
-
+```bash
 flutter run -d chrome
+```
 
-If the project does not yet include web support, add it first:
+## Build
 
-flutter create . --platforms web
-flutter run -d chrome
+Windows:
 
-To confirm Chrome is available as a Flutter target:
-
-flutter devices
-Build
-Windows release
+```bash
 flutter build windows
-Android APK
+```
+
+Android APK:
+
+```bash
 flutter build apk
-Chrome/Web build
+```
+
+Web:
+
+```bash
 flutter build web
+```
 
-Built web output will be generated in:
+## Verification Commands
 
-build/web
-Verification Commands
-flutter pub get
+```bash
+dart format lib test
 flutter analyze
 flutter test
-flutter run -d windows
-flutter run -d emulator-5554
-flutter run -d chrome
+flutter build windows
+flutter build apk
+flutter run -d windows --no-resident
+```
 
-When Android hardware/emulator is unavailable, use build verification:
+## Notes
 
-flutter build apk --debug
-
-When Chrome/Web runtime cannot be launched locally, use build verification:
-
-flutter build web
-Notes
-Windows requires the Windows desktop Flutter toolchain to be installed.
-Android requires a connected device or emulator.
-Chrome/Web requires Flutter web support and a detected Chrome browser target.
-If Chrome does not appear in flutter devices, enable web support and verify the local Flutter setup before running.
-
+- `google_fonts` provides the premium typography (`Orbitron`, `Exo 2`).
+- The page-turn implementation remains custom `Transform/Matrix4` to preserve live interactivity on the active pages.
+- `HoverPressSurface` was intentionally preserved and reused as the base interaction primitive.

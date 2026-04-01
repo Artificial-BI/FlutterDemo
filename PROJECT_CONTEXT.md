@@ -22,47 +22,71 @@ This project is a premium animated Flutter digital-book demo for Android and Win
 - Shared reusable interaction widget with hover, press, and keyboard activation support.
 - Clear previous/next navigation and page indicators.
 
-## Main File Ownership
+## Current Architecture
+
+The project now uses a small feature-oriented structure with explicit shared layers instead of one giant page file.
+
+### Core Files
 
 - `lib/main.dart`
   - Entrypoint; launches `ClickBookDemoApp`.
 
 - `lib/book_demo_app.dart`
-  - App-level theme and typography.
+  - App theme and typography.
 
 - `lib/book_experience.dart`
-  - Book container experience:
-    - cover open interaction
-    - page turn state/transitions
-    - drag handling
-    - nav controls and background painter
+  - Book scene composition.
+  - Cover open interaction.
+  - Page turn state/transitions.
+  - Navigation controls.
+  - Scoped animated rebuilds for the scene.
 
-- `lib/demo_pages.dart`
-  - Interaction page content and reusable page widgets:
-    - `ShowcasePageShell`
-    - `HoverPressSurface`
-    - page widgets 1-10
+- `lib/book/book_experience_constants.dart`
+  - Named constants for book unlock thresholds, turn thresholds, motion ratios, and decoration tokens.
 
-- `test/widget_test.dart`
-  - Smoke test for app startup and cover UI.
+### Demo Layer
+
+- `lib/demo/demo_page_catalog.dart`
+  - Lazy page builder by index.
+  - Only the active page and the incoming page during a turn are built.
+
+- `lib/demo/shared/showcase_page_shell.dart`
+  - Shared page shell and ambient backdrop.
+
+- `lib/demo/shared/hover_press_surface.dart`
+  - Shared hover/press/focus interaction primitive.
+
+- `lib/demo/responsive/demo_responsive.dart`
+  - Shared breakpoint constants.
+  - `BookLayout`, `DemoPageLayout`, `DemoPageShellLayout`.
+
+- `lib/demo/animation/demo_animation.dart`
+  - Shared animation controller lifecycle helpers.
+  - Staggered animation utilities.
+
+- `lib/demo/pages/`
+  - One page per file for all 10 demo pages.
+
+## Architectural Rules
+
+- Do not reintroduce eager page lists for the full book. Use the page catalog.
+- Do not create `AnimationController` instances as inline field initializers. Create them in `initState`.
+- Do not create `CurvedAnimation`/interval objects in `build()` unless the object is purely local and not rebuild-sensitive; prefer lifecycle-owned fields or shared helpers.
+- Do not use `Future.delayed` to guess animation completion. Use `AnimationStatus` listeners.
+- Do not add new breakpoint thresholds ad hoc inside pages. Extend `demo_responsive.dart` instead.
+- Reuse `HoverPressSurface` and `ShowcasePageShell` before adding new wrappers.
+- Keep rebuild scopes local to the subtree that actually depends on an animation.
+
+## Build/Run Notes (2026-04-01)
+
+- `dart format lib test`: passed
+- `flutter analyze`: passed
+- `flutter test`: passed
+- `flutter build windows`: passed
+- `flutter build apk`: passed
+- `flutter run -d windows --no-resident`: passed
 
 ## Dependency Notes
 
 - `google_fonts` is used for premium typography.
 - Page-turn remains custom `Transform/Matrix4` for stable live interactions.
-
-## Architecture Notes
-
-- Intentionally minimal, feature-oriented structure.
-- No BLoC/Redux/global complex state layers.
-- Local widget state + focused animation controllers.
-
-## Build/Run Notes (2026-03-24)
-
-- `flutter pub get`: passed
-- `flutter analyze`: passed
-- `flutter build windows`: passed
-- `flutter build apk`: passed
-- `flutter run -d windows --no-resident`: passed
-- `flutter run -d emulator-5554 --no-resident`: passed on emulator `Medium_Phone_API_36.1`
-- `adb devices`: confirmed Android runtime target as `emulator-5554`

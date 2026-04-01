@@ -1,59 +1,50 @@
 # Context
 
-## Platform Compatibility Audit (2026-03-24)
+## Current Refactor Status (2026-04-01)
 
-This file summarizes the latest targeted build/run compatibility pass for Windows and Android.
+This project has completed a structural refactor focused on architecture rather than cosmetics.
 
-## What Was Fixed
+## What Changed
 
-- No source or platform configuration fixes were required.
-- Existing project configuration already compiled and built successfully for both targets.
-- Documentation was updated to reflect verified run/build flow and current platform notes.
+- Split the former monolithic `lib/demo_pages.dart` into dedicated page files under `lib/demo/pages/`.
+- Replaced eager page construction with a lazy page catalog in `lib/demo/demo_page_catalog.dart`.
+- Introduced a shared animation lifecycle layer in `lib/demo/animation/demo_animation.dart`.
+- Centralized breakpoint and layout rules in `lib/demo/responsive/demo_responsive.dart`.
+- Moved book-scene motion thresholds and constants into `lib/book/book_experience_constants.dart`.
+- Localized animation rebuilds in `lib/book_experience.dart` so the entire `Scaffold` is no longer rebuilt every tick.
+- Removed timer-based animation completion from the final CTA page and switched to `AnimationStatus` handling.
+- Added a navigation smoke test in `test/widget_test.dart`.
 
 ## Verified Commands And Results
 
-- `flutter pub get` -> passed
+- `dart format lib test` -> passed
 - `flutter analyze` -> passed (no issues)
+- `flutter test` -> passed
 - `flutter build windows` -> passed
 - `flutter build apk` -> passed
 - `flutter run -d windows --no-resident` -> passed
-- `flutter emulators` -> `Medium_Phone_API_36.1` available
-- `flutter emulators --launch Medium_Phone_API_36.1` -> passed
-- `flutter devices` / `adb devices` -> detected `emulator-5554`
-- `flutter run -d emulator-5554 --no-resident` -> passed
 
-## Build Outputs
+## Quick Ownership Map
 
-- Windows release exe:
-  - `build/windows/x64/runner/Release/click_dashboard.exe`
-- Android release apk:
-  - `build/app/outputs/flutter-apk/app-release.apk`
+- `lib/book_experience.dart`
+  - Book container, cover interaction, page turn orchestration, navigation UI.
 
-## How To Run
+- `lib/demo/demo_page_catalog.dart`
+  - Lazy page creation by index.
 
-### Windows
+- `lib/demo/animation/demo_animation.dart`
+  - Shared controller lifecycle and stagger helpers.
 
-```bash
-flutter pub get
-flutter run -d windows
-```
+- `lib/demo/responsive/demo_responsive.dart`
+  - Shared breakpoint and layout rules.
 
-### Android
+- `lib/demo/shared/`
+  - Common page shell and interaction surface.
 
-```bash
-flutter pub get
-flutter devices
-flutter run -d <android-device-id>
-```
-
-If no device/emulator is connected, verify Android build with:
-
-```bash
-flutter build apk
-```
+- `lib/demo/pages/`
+  - Individual page implementations.
 
 ## Notes
 
 - Main project context remains in `PROJECT_CONTEXT.md`.
-- This `context.md` file exists for quick handoff status and immediate run/build guidance.
-- First Android run attempt hit a transient service-protocol attach error; resolved by restarting `adb` and rerunning. No source code or Gradle changes were required.
+- The current working tree intentionally includes user-approved deletions of `_android_page3*.png` and `build.zip`.
