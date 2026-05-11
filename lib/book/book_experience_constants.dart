@@ -29,6 +29,15 @@ abstract final class BookMotion {
   static const double coverDragDeltaClamp = 0.08;
 }
 
+abstract final class BookStructureTokens {
+  static const double pageContentInset = 14.0;
+  static const double bookRadius = 32.0;
+  static const double pageRadius = 24.0;
+  static const double bookHingeWidth = 22.0;
+  static const double coverEdgeWidth = 10.0;
+  static const double gridSpacing = 48.0;
+}
+
 abstract final class BookDecorationTokens {
   static const double sharedBorderAlpha = 0.24;
   static const double bookFrameBorderAlpha = 0.20;

@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../animation/demo_animation.dart';
@@ -43,6 +44,10 @@ abstract final class _RadialWheelTokens {
   static const double compactCenterIconSize = 28.0;
   static const double regularCenterIconSize = 30.0;
   static const double itemLabelGap = 4.0;
+  static const double compactItemLabelGap = 2.0;
+  static const double compactItemFontSize = 10.5;
+  static const double regularItemFontSize = 13.0;
+  static const double itemContentInset = 4.0;
   static const double nodeHoverOffsetCompact = 2.5;
   static const double nodeHoverOffsetRegular = 3.0;
   static const double staggerStep = 0.06;
@@ -61,8 +66,6 @@ class _RadialCommandWheelPageState
   late final List<Animation<double>> _actionAnimations;
 
   bool _open = false;
-  int? _hovered;
-  final List<Offset> _hoverOffsets = List<Offset>.filled(6, Offset.zero);
 
   static const List<_RadialAction> _actions = <_RadialAction>[
     _RadialAction(icon: Icons.flash_on, label: 'Boost'),
@@ -95,7 +98,6 @@ class _RadialCommandWheelPageState
         _menu.forward();
       } else {
         _menu.reverse();
-        _hovered = null;
       }
     });
   }
@@ -172,98 +174,20 @@ class _RadialCommandWheelPageState
                       final angle =
                           (-pi / 2) + (index * (pi * 2 / _actions.length));
                       final radius = radiusBase * value;
-                      final hover = _hoverOffsets[index];
                       final offset = Offset(
-                        cos(angle) * radius + hover.dx,
-                        sin(angle) * radius + hover.dy,
+                        cos(angle) * radius,
+                        sin(angle) * radius,
                       );
 
-                      return Transform.translate(
-                        offset: offset,
-                        child: Opacity(
-                          opacity: value.clamp(0.0, 1.0),
-                          child: MouseRegion(
-                            onEnter: (_) => setState(() => _hovered = index),
-                            onExit: (_) {
-                              setState(() {
-                                _hovered = null;
-                                _hoverOffsets[index] = Offset.zero;
-                              });
-                            },
-                            onHover: (event) {
-                              final box = areaContext.findRenderObject();
-                              if (box is! RenderBox) {
-                                return;
-                              }
-                              final local = box.globalToLocal(event.position);
-                              final center = box.size.center(Offset.zero);
-                              final vector = local - center;
-                              final distance = vector.distance;
-                              final normal = distance == 0
-                                  ? Offset.zero
-                                  : Offset(
-                                      vector.dx / distance,
-                                      vector.dy / distance,
-                                    );
-                              setState(() {
-                                _hoverOffsets[index] =
-                                    normal *
-                                    (layout.compact
-                                        ? _RadialWheelTokens
-                                              .nodeHoverOffsetCompact
-                                        : _RadialWheelTokens
-                                              .nodeHoverOffsetRegular);
-                              });
-                            },
-                            child: HoverPressSurface(
-                              onTap: _toggleMenu,
-                              width: nodeSize,
-                              height: nodeSize,
-                              borderRadius: nodeSize / 2,
-                              alignment: Alignment.center,
-                              background: _hovered == index
-                                  ? const Color(
-                                      0xFF5BE9FF,
-                                    ).withValues(
-                                      alpha: _RadialWheelTokens.activeNodeAlpha,
-                                    )
-                                  : Colors.white.withValues(
-                                      alpha: _RadialWheelTokens.idleNodeAlpha,
-                                    ),
-                              border: Border.all(
-                                color: _hovered == index
-                                    ? const Color(0xFF7BF0FF)
-                                    : Colors.white.withValues(
-                                        alpha:
-                                            _RadialWheelTokens.idleNodeBorderAlpha,
-                                      ),
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    item.icon,
-                                    size: layout.compact
-                                        ? _RadialWheelTokens.compactNodeIconSize
-                                        : _RadialWheelTokens.regularNodeIconSize,
-                                  ),
-                                  const SizedBox(
-                                    height: _RadialWheelTokens.itemLabelGap,
-                                  ),
-                                  Text(
-                                    item.label,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(
-                                          fontSize: layout.compact ? 12 : 14,
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
+                      return _RadialMenuItem(
+                        action: item,
+                        areaContext: areaContext,
+                        baseOffset: offset,
+                        compact: layout.compact,
+                        nodeSize: nodeSize,
+                        opacity: value.clamp(0.0, 1.0),
+                        open: _open,
+                        onTap: _toggleMenu,
                       );
                     }),
                     HoverPressSurface(
@@ -302,6 +226,145 @@ class _RadialCommandWheelPageState
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _RadialMenuItem extends StatefulWidget {
+  const _RadialMenuItem({
+    required this.action,
+    required this.areaContext,
+    required this.baseOffset,
+    required this.compact,
+    required this.nodeSize,
+    required this.opacity,
+    required this.open,
+    required this.onTap,
+  });
+
+  final _RadialAction action;
+  final BuildContext areaContext;
+  final Offset baseOffset;
+  final bool compact;
+  final double nodeSize;
+  final double opacity;
+  final bool open;
+  final VoidCallback onTap;
+
+  @override
+  State<_RadialMenuItem> createState() => _RadialMenuItemState();
+}
+
+class _RadialMenuItemState extends State<_RadialMenuItem> {
+  bool _hovered = false;
+  Offset _hoverOffset = Offset.zero;
+
+  @override
+  void didUpdateWidget(covariant _RadialMenuItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.open && !widget.open) {
+      _hovered = false;
+      _hoverOffset = Offset.zero;
+    }
+  }
+
+  void _handleHover(PointerHoverEvent event) {
+    final box = widget.areaContext.findRenderObject();
+    if (box is! RenderBox) {
+      return;
+    }
+    final local = box.globalToLocal(event.position);
+    final center = box.size.center(Offset.zero);
+    final vector = local - center;
+    final distance = vector.distance;
+    final normal = distance == 0
+        ? Offset.zero
+        : Offset(vector.dx / distance, vector.dy / distance);
+    final offset =
+        normal *
+        (widget.compact
+            ? _RadialWheelTokens.nodeHoverOffsetCompact
+            : _RadialWheelTokens.nodeHoverOffsetRegular);
+
+    setState(() => _hoverOffset = offset);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final offset = widget.baseOffset + _hoverOffset;
+
+    return Transform.translate(
+      offset: offset,
+      child: Opacity(
+        opacity: widget.opacity,
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) {
+            setState(() {
+              _hovered = false;
+              _hoverOffset = Offset.zero;
+            });
+          },
+          onHover: _handleHover,
+          child: HoverPressSurface(
+            onTap: widget.onTap,
+            width: widget.nodeSize,
+            height: widget.nodeSize,
+            borderRadius: widget.nodeSize / 2,
+            alignment: Alignment.center,
+            background: _hovered
+                ? const Color(
+                    0xFF5BE9FF,
+                  ).withValues(alpha: _RadialWheelTokens.activeNodeAlpha)
+                : Colors.white.withValues(
+                    alpha: _RadialWheelTokens.idleNodeAlpha,
+                  ),
+            border: Border.all(
+              color: _hovered
+                  ? const Color(0xFF7BF0FF)
+                  : Colors.white.withValues(
+                      alpha: _RadialWheelTokens.idleNodeBorderAlpha,
+                    ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(
+                _RadialWheelTokens.itemContentInset,
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      widget.action.icon,
+                      size: widget.compact
+                          ? _RadialWheelTokens.compactNodeIconSize
+                          : _RadialWheelTokens.regularNodeIconSize,
+                    ),
+                    SizedBox(
+                      height: widget.compact
+                          ? _RadialWheelTokens.compactItemLabelGap
+                          : _RadialWheelTokens.itemLabelGap,
+                    ),
+                    Text(
+                      widget.action.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.visible,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontSize: widget.compact
+                            ? _RadialWheelTokens.compactItemFontSize
+                            : _RadialWheelTokens.regularItemFontSize,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

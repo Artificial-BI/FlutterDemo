@@ -17,6 +17,21 @@ abstract final class DemoBreakpoints {
   static const double pageCompactHeight = 320;
 }
 
+abstract final class _BookLayoutTokens {
+  static const double phoneWidthFactor = 0.97;
+  static const double narrowWidthFactor = 0.96;
+  static const double regularWidthFactor = 0.92;
+  static const double maxBookWidth = 1000.0;
+
+  static const double phoneHeightFactor = 0.82;
+  static const double shortHeightFactor = 0.72;
+  static const double narrowHeightFactor = 0.74;
+  static const double regularHeightFactor = 0.76;
+  static const double phoneMaxHeight = 720.0;
+  static const double narrowMaxHeight = 640.0;
+  static const double regularMaxHeight = 690.0;
+}
+
 class BookLayout {
   const BookLayout._({
     required this.phone,
@@ -34,14 +49,29 @@ class BookLayout {
     final short = constraints.maxHeight < DemoBreakpoints.bookShortHeight;
 
     final bookWidth = min(
-      constraints.maxWidth * (phone ? 0.97 : (narrow ? 0.96 : 0.92)),
-      1000.0,
+      constraints.maxWidth *
+          (phone
+              ? _BookLayoutTokens.phoneWidthFactor
+              : (narrow
+                    ? _BookLayoutTokens.narrowWidthFactor
+                    : _BookLayoutTokens.regularWidthFactor)),
+      _BookLayoutTokens.maxBookWidth,
     );
 
     final bookHeight = min(
       constraints.maxHeight *
-          (phone ? 0.82 : (short ? 0.72 : (narrow ? 0.74 : 0.76))),
-      phone ? 720.0 : (narrow ? 640.0 : 690.0),
+          (phone
+              ? _BookLayoutTokens.phoneHeightFactor
+              : (short
+                    ? _BookLayoutTokens.shortHeightFactor
+                    : (narrow
+                          ? _BookLayoutTokens.narrowHeightFactor
+                          : _BookLayoutTokens.regularHeightFactor))),
+      phone
+          ? _BookLayoutTokens.phoneMaxHeight
+          : (narrow
+                ? _BookLayoutTokens.narrowMaxHeight
+                : _BookLayoutTokens.regularMaxHeight),
     );
 
     return BookLayout._(

@@ -9,6 +9,7 @@ import '../shared/showcase_page_shell.dart';
 abstract final class _BrightnessTokens {
   static const double initialBrightness = 0.66;
   static const double baseGlowSize = 120.0;
+  static const double fallbackGlowSize = 180.0;
   static const double compactRailHeight = 170.0;
   static const double regularRailHeight = 300.0;
   static const double compactRailHeightFactor = 0.82;
@@ -26,6 +27,9 @@ abstract final class _BrightnessTokens {
   static const double orbShadowAlphaRange = 0.4;
   static const double orbShadowBlurBase = 30.0;
   static const double orbShadowBlurRange = 90.0;
+  static const double orbShadowSpread = 2.0;
+  static const double compactContentGap = 16.0;
+  static const double regularContentGap = 28.0;
   static const double compactRailWidth = 62.0;
   static const double regularRailWidth = 82.0;
   static const double trackBottomInset = 24.0;
@@ -58,12 +62,12 @@ class BrightnessDimmerPage extends StatefulWidget {
 class _BrightnessDimmerPageState extends State<BrightnessDimmerPage> {
   double _brightness = _BrightnessTokens.initialBrightness;
 
-  void _updateFromLocal(Offset local, Size size) {
-    if (size.height <= 0) {
+  void _setBrightness(double value) {
+    final brightness = value.clamp(0.0, 1.0);
+    if (brightness == _brightness) {
       return;
     }
-    final ratio = (1 - (local.dy / size.height)).clamp(0.0, 1.0);
-    setState(() => _brightness = ratio);
+    setState(() => _brightness = brightness);
   }
 
   @override
@@ -74,12 +78,11 @@ class _BrightnessDimmerPageState extends State<BrightnessDimmerPage> {
           _BrightnessTokens.regularOrbBaseSize,
           _brightness,
         ) ??
-        180;
-    final topTone = Color.lerp(
-      const Color(0xFF102138),
-      const Color(0xFF355C8C),
-      _brightness,
-    )!;
+        _BrightnessTokens.fallbackGlowSize;
+    final safeBrightness = _brightness.clamp(0.0, 1.0);
+    const dimTone = Color(0xFF102138);
+    final topTone =
+        Color.lerp(dimTone, const Color(0xFF355C8C), safeBrightness) ?? dimTone;
 
     return ShowcasePageShell(
       pageNumber: 3,
@@ -121,23 +124,22 @@ class _BrightnessDimmerPageState extends State<BrightnessDimmerPage> {
             height: orbSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(
-                0xFFFFF3B0,
-              ).withValues(
-                alpha: _BrightnessTokens.orbGlowAlphaBase +
+              color: const Color(0xFFFFF3B0).withValues(
+                alpha:
+                    _BrightnessTokens.orbGlowAlphaBase +
                     (_brightness * _BrightnessTokens.orbGlowAlphaRange),
               ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(
-                    0xFFFFE582,
-                  ).withValues(
-                    alpha: _BrightnessTokens.orbShadowAlphaBase +
+                  color: const Color(0xFFFFE582).withValues(
+                    alpha:
+                        _BrightnessTokens.orbShadowAlphaBase +
                         (_brightness * _BrightnessTokens.orbShadowAlphaRange),
                   ),
-                  blurRadius: _BrightnessTokens.orbShadowBlurBase +
+                  blurRadius:
+                      _BrightnessTokens.orbShadowBlurBase +
                       (_BrightnessTokens.orbShadowBlurRange * _brightness),
-                  spreadRadius: 2,
+                  spreadRadius: _BrightnessTokens.orbShadowSpread,
                 ),
               ],
             ),
@@ -150,12 +152,16 @@ class _BrightnessDimmerPageState extends State<BrightnessDimmerPage> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(child: Center(child: orb)),
-                SizedBox(width: layout.compact ? 16 : 28),
+                SizedBox(
+                  width: layout.compact
+                      ? _BrightnessTokens.compactContentGap
+                      : _BrightnessTokens.regularContentGap,
+                ),
                 _BrightnessRail(
                   compact: layout.compact,
                   brightness: _brightness,
                   height: railHeight,
-                  onUpdateFromLocal: _updateFromLocal,
+                  onBrightnessChanged: _setBrightness,
                 ),
               ],
             ),
@@ -171,13 +177,21 @@ class _BrightnessRail extends StatelessWidget {
     required this.compact,
     required this.brightness,
     required this.height,
-    required this.onUpdateFromLocal,
+    required this.onBrightnessChanged,
   });
 
   final bool compact;
   final double brightness;
   final double height;
-  final void Function(Offset local, Size size) onUpdateFromLocal;
+  final ValueChanged<double> onBrightnessChanged;
+
+  void _updateFromLocal(Offset local, Size size) {
+    if (size.height <= 0) {
+      return;
+    }
+    final brightness = (1 - (local.dy / size.height)).clamp(0.0, 1.0);
+    onBrightnessChanged(brightness);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -196,9 +210,9 @@ class _BrightnessRail extends StatelessWidget {
 
           return GestureDetector(
             onTapDown: (details) =>
-                onUpdateFromLocal(details.localPosition, size),
+                _updateFromLocal(details.localPosition, size),
             onVerticalDragUpdate: (details) =>
-                onUpdateFromLocal(details.localPosition, size),
+                _updateFromLocal(details.localPosition, size),
             child: Container(
               padding: EdgeInsets.symmetric(
                 horizontal: compact

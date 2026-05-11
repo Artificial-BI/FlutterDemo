@@ -9,6 +9,7 @@ import '../shared/showcase_page_shell.dart';
 
 abstract final class _NotificationBellTokens {
   static const int initialBadgeCount = 2;
+  static const int maxBadgeCount = 99;
   static const double compactAreaSize = 210.0;
   static const double regularAreaSize = 340.0;
   static const double compactAreaWidthFactor = 0.72;
@@ -68,7 +69,9 @@ class _NotificationBellPageState
   }
 
   void _triggerBell() {
-    setState(() => _badge += 1);
+    setState(() {
+      _badge = min(_badge + 1, _NotificationBellTokens.maxBadgeCount);
+    });
     _wiggle.forward(from: 0);
     _ring.forward(from: 0);
   }
@@ -118,11 +121,14 @@ class _NotificationBellPageState
             animation: _effects,
             builder: (context, _) {
               final wiggle =
-                  sin(_wiggle.value * pi * _NotificationBellTokens.wiggleCycles) *
+                  sin(
+                    _wiggle.value * pi * _NotificationBellTokens.wiggleCycles,
+                  ) *
                   (1 - _wiggle.value) *
                   _NotificationBellTokens.wiggleAmplitude;
               final ring = Curves.easeOut.transform(_ring.value);
-              final badgeScale = 1 +
+              final badgeScale =
+                  1 +
                   (sin(
                         _wiggle.value *
                             pi *
@@ -136,17 +142,21 @@ class _NotificationBellPageState
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    ...List.generate(_NotificationBellTokens.ringCount, (index) {
+                    ...List.generate(_NotificationBellTokens.ringCount, (
+                      index,
+                    ) {
                       final delay =
                           index * _NotificationBellTokens.ringDelayStep;
-                      final local =
-                          ((ring - delay) / (1 - delay)).clamp(0.0, 1.0);
+                      final local = ((ring - delay) / (1 - delay)).clamp(
+                        0.0,
+                        1.0,
+                      );
                       final ringSize =
                           (bellSize *
-                                  _NotificationBellTokens.ringBaseBellFactor) +
-                              (local *
-                                  areaSize *
-                                  _NotificationBellTokens.ringGrowthAreaFactor);
+                              _NotificationBellTokens.ringBaseBellFactor) +
+                          (local *
+                              areaSize *
+                              _NotificationBellTokens.ringGrowthAreaFactor);
                       return IgnorePointer(
                         child: Container(
                           width: ringSize,
@@ -174,15 +184,11 @@ class _NotificationBellPageState
                         height: bellSize,
                         borderRadius: bellRadius,
                         alignment: Alignment.center,
-                        background: const Color(
-                          0xFF1A2A42,
-                        ).withValues(
+                        background: const Color(0xFF1A2A42).withValues(
                           alpha: _NotificationBellTokens.bellFillAlpha,
                         ),
                         border: Border.all(
-                          color: const Color(
-                            0xFF66E7FF,
-                          ).withValues(
+                          color: const Color(0xFF66E7FF).withValues(
                             alpha: _NotificationBellTokens.bellBorderAlpha,
                           ),
                         ),
@@ -199,7 +205,8 @@ class _NotificationBellPageState
                       alignment: Alignment.center,
                       child: Transform.translate(
                         offset: Offset(
-                          bellRadius * _NotificationBellTokens.badgeOffsetFactor,
+                          bellRadius *
+                              _NotificationBellTokens.badgeOffsetFactor,
                           -bellRadius *
                               _NotificationBellTokens.badgeOffsetFactor,
                         ),
@@ -214,10 +221,9 @@ class _NotificationBellPageState
                               color: const Color(0xFFFF6B86),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(
-                                    0xFFFF6B86,
-                                  ).withValues(
-                                    alpha: _NotificationBellTokens.badgeGlowAlpha,
+                                  color: const Color(0xFFFF6B86).withValues(
+                                    alpha:
+                                        _NotificationBellTokens.badgeGlowAlpha,
                                   ),
                                   blurRadius:
                                       _NotificationBellTokens.badgeGlowBlur,
@@ -230,12 +236,12 @@ class _NotificationBellPageState
                                   ?.copyWith(
                                     fontSize:
                                         badgeSize <
-                                                _NotificationBellTokens
-                                                    .compactBadgeFontThreshold
-                                            ? _NotificationBellTokens
-                                                .compactBadgeFontSize
-                                            : _NotificationBellTokens
-                                                .regularBadgeFontSize,
+                                            _NotificationBellTokens
+                                                .compactBadgeFontThreshold
+                                        ? _NotificationBellTokens
+                                              .compactBadgeFontSize
+                                        : _NotificationBellTokens
+                                              .regularBadgeFontSize,
                                   ),
                             ),
                           ),

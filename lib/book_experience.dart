@@ -79,9 +79,11 @@ class _BookExperienceScreenState
     if (!mounted) {
       return;
     }
+    _turn.stop();
     setState(() {
-      _index = 0;
       _bookUnlocked = false;
+      _coverHover = false;
+      _coverPressed = false;
       _activeTurn = null;
       _dragDirection = null;
       _dragInProgress = false;
@@ -89,7 +91,19 @@ class _BookExperienceScreenState
       _pendingWarmupTurnDelta = null;
       _turn.value = 0;
     });
-    _coverOpen.animateBack(0, curve: Curves.easeInOutCubic);
+
+    if (_coverOpen.value <= 0) {
+      setState(() => _index = 0);
+      return;
+    }
+
+    _coverOpen
+        .animateBack(0, curve: Curves.easeInOutCubic)
+        .whenCompleteOrCancel(() {
+          if (mounted) {
+            setState(() => _index = 0);
+          }
+        });
   }
 
   void _scheduleTurnWarmup(VoidCallback action) {
@@ -195,9 +209,11 @@ class _BookExperienceScreenState
         final initialDelta = _dragDirection == TurnDirection.forward
             ? -details.delta.dx / pageWidth
             : details.delta.dx / pageWidth;
-        setState(() => _activeTurn = _dragDirection);
-        _pendingWarmupTurnDelta = initialDelta;
-        _scheduleTurnWarmup(_flushPendingWarmupTurnDelta);
+        setState(() {
+          _activeTurn = _dragDirection;
+          _pendingWarmupTurnDelta = null;
+          _turn.value = (_turn.value + initialDelta).clamp(0.0, 1.0);
+        });
         return;
       }
     }
@@ -352,7 +368,10 @@ class _BookExperienceScreenState
                               onPageDragUpdate: _bookUnlocked
                                   ? (details) => _handlePageDragUpdate(
                                       details,
-                                      layout.bookWidth - 28,
+                                      layout.bookWidth -
+                                          (BookStructureTokens
+                                                  .pageContentInset *
+                                              2),
                                     )
                                   : null,
                               onPageDragEnd: _bookUnlocked
@@ -538,7 +557,7 @@ class _BookBase extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.circular(BookStructureTokens.bookRadius),
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -560,14 +579,14 @@ class _BookBase extends StatelessWidget {
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.circular(BookStructureTokens.bookRadius),
         child: Stack(
           children: [
             Positioned(
               left: 0,
               top: 0,
               bottom: 0,
-              width: 22,
+              width: BookStructureTokens.bookHingeWidth,
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -583,9 +602,13 @@ class _BookBase extends StatelessWidget {
             ),
             Positioned.fill(
               child: Padding(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(
+                  BookStructureTokens.pageContentInset,
+                ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(
+                    BookStructureTokens.pageRadius,
+                  ),
                   child: MouseRegion(
                     cursor: SystemMouseCursors.click,
                     child: GestureDetector(
@@ -662,10 +685,7 @@ class _BookPageLayers extends StatelessWidget {
           scale:
               BookMotion.incomingPageBaseScale +
               (BookMotion.incomingPageScaleRange * progress),
-          child: _pageLayer(
-            incoming,
-            freezeTickers: freezePageTickers,
-          ),
+          child: _pageLayer(incoming, freezeTickers: freezePageTickers),
         ),
         Transform(
           alignment: pivot,
@@ -874,7 +894,9 @@ class _CoverLayer extends StatelessWidget {
               ..rotateY(-progress * pi * BookMotion.coverOpenRotationFactor),
             child: DecoratedBox(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(32),
+                borderRadius: BorderRadius.circular(
+                  BookStructureTokens.bookRadius,
+                ),
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -914,12 +936,16 @@ class _CoverLayer extends StatelessWidget {
                     right: 0,
                     top: 0,
                     bottom: 0,
-                    width: 10,
+                    width: BookStructureTokens.coverEdgeWidth,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.only(
-                          topRight: Radius.circular(32),
-                          bottomRight: Radius.circular(32),
+                        borderRadius: BorderRadius.only(
+                          topRight: Radius.circular(
+                            BookStructureTokens.bookRadius,
+                          ),
+                          bottomRight: Radius.circular(
+                            BookStructureTokens.bookRadius,
+                          ),
                         ),
                         gradient: LinearGradient(
                           begin: Alignment.centerLeft,
@@ -1111,7 +1137,7 @@ class _GridPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
 
-    const spacing = 48.0;
+    const spacing = BookStructureTokens.gridSpacing;
     for (double x = 0; x <= size.width; x += spacing) {
       path.moveTo(x, 0);
       path.lineTo(x, size.height);
