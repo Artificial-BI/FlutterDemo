@@ -28,6 +28,7 @@ This project has completed a structural refactor focused on architecture rather 
 
 - `lib/book_experience.dart`
   - Book container, cover interaction, page turn orchestration, navigation UI.
+  - Includes a small page-turn gesture handler with explicit `idle / warming / active / committing` states.
 
 - `lib/demo/demo_page_catalog.dart`
   - Lazy page creation by index.

@@ -14,6 +14,8 @@ Verified after refactor:
 - `flutter build windows`: passed
 - `flutter build apk`: passed
 - `flutter run -d windows --no-resident`: launched successfully
+- `flutter run -d chrome`: launched successfully
+- `flutter build web`: passed
 
 ## What This Project Contains
 
@@ -51,6 +53,9 @@ Verified after refactor:
 
 - `lib/book/book_experience_constants.dart`
   - Named constants for unlock thresholds, turn thresholds, cover motion, and book-scene decoration values.
+
+- `lib/design/`
+  - Shared lightweight design tokens for common app colors, spacing, radii, and motion values.
 
 - `lib/demo/demo_page_catalog.dart`
   - Lazy page registry. Builds the active page by index instead of eagerly creating all 10 pages at startup.
@@ -181,4 +186,5 @@ flutter run -d windows --no-resident
 
 - `google_fonts` provides the premium typography (`Orbitron`, `Exo 2`).
 - The page-turn implementation remains custom `Transform/Matrix4` to preserve live interactivity on the active pages.
+- Page-turn drag state is handled through a small dedicated gesture helper with explicit `idle / warming / active / committing` phases.
 - `HoverPressSurface` was intentionally preserved and reused as the base interaction primitive.

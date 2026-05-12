@@ -123,8 +123,8 @@ class _MorphTogglePageState extends State<MorphTogglePage> {
                       ),
                       blurRadius: _enabled
                           ? (layout.compact
-                              ? _MorphToggleTokens.compactEnabledShadowBlur
-                              : _MorphToggleTokens.regularEnabledShadowBlur)
+                                ? _MorphToggleTokens.compactEnabledShadowBlur
+                                : _MorphToggleTokens.regularEnabledShadowBlur)
                           : _MorphToggleTokens.idleShadowBlur,
                       spreadRadius: _enabled
                           ? _MorphToggleTokens.enabledShadowSpread

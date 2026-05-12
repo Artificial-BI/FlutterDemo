@@ -136,7 +136,8 @@ class _MechanicalLeverPageState
             child: AnimatedBuilder(
               animation: _lever,
               builder: (context, _) {
-                final angle = lerpDouble(
+                final angle =
+                    lerpDouble(
                       _MechanicalLeverTokens.leverStartAngle,
                       _MechanicalLeverTokens.leverEndAngle,
                       _lever.value,
@@ -169,7 +170,8 @@ class _MechanicalLeverPageState
                               boxShadow: [
                                 BoxShadow(
                                   color: Colors.black.withValues(
-                                    alpha: _MechanicalLeverTokens.baseShadowAlpha,
+                                    alpha:
+                                        _MechanicalLeverTokens.baseShadowAlpha,
                                   ),
                                   blurRadius:
                                       _MechanicalLeverTokens.baseShadowBlur *
@@ -186,7 +188,8 @@ class _MechanicalLeverPageState
                         ),
                       ),
                       Positioned(
-                        bottom: _MechanicalLeverTokens.pivotBottomOffset * scale,
+                        bottom:
+                            _MechanicalLeverTokens.pivotBottomOffset * scale,
                         child: Container(
                           width: _MechanicalLeverTokens.pivotWidth * scale,
                           height: _MechanicalLeverTokens.pivotHeight * scale,
@@ -199,14 +202,16 @@ class _MechanicalLeverPageState
                         ),
                       ),
                       Positioned(
-                        bottom: _MechanicalLeverTokens.leverBottomOffset * scale,
+                        bottom:
+                            _MechanicalLeverTokens.leverBottomOffset * scale,
                         child: Transform.rotate(
                           angle: angle,
                           alignment: Alignment.bottomCenter,
                           child: Column(
                             children: [
                               Container(
-                                width: _MechanicalLeverTokens.leverWidth * scale,
+                                width:
+                                    _MechanicalLeverTokens.leverWidth * scale,
                                 height:
                                     _MechanicalLeverTokens.leverHeight * scale,
                                 decoration: BoxDecoration(
@@ -260,12 +265,11 @@ class _MechanicalLeverPageState
                           engaged ? 'ENGAGED' : 'STANDBY',
                           style: Theme.of(context).textTheme.titleLarge
                               ?.copyWith(
-                                fontSize:
-                                    scale < 0.9
-                                        ? _MechanicalLeverTokens
-                                            .compactStatusFontSize
-                                        : _MechanicalLeverTokens
-                                            .regularStatusFontSize,
+                                fontSize: scale < 0.9
+                                    ? _MechanicalLeverTokens
+                                          .compactStatusFontSize
+                                    : _MechanicalLeverTokens
+                                          .regularStatusFontSize,
                               ),
                         ),
                       ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'book_experience.dart';
+import 'design/app_colors.dart';
 
 class ClickBookDemoApp extends StatelessWidget {
   const ClickBookDemoApp({super.key});
@@ -13,14 +14,14 @@ class ClickBookDemoApp extends StatelessWidget {
       useMaterial3: true,
       colorScheme:
           ColorScheme.fromSeed(
-            seedColor: const Color(0xFF20E3C4),
+            seedColor: AppColors.brandMint,
             brightness: Brightness.dark,
           ).copyWith(
-            surface: const Color(0xFF0D1428),
-            primary: const Color(0xFF31F6D0),
-            secondary: const Color(0xFFFF8A5B),
+            surface: AppColors.surface,
+            primary: AppColors.primary,
+            secondary: AppColors.secondary,
           ),
-      scaffoldBackgroundColor: const Color(0xFF04060F),
+      scaffoldBackgroundColor: AppColors.scaffold,
     );
 
     return MaterialApp(

@@ -12,6 +12,71 @@ enum TurnDirection { forward, backward }
 
 enum _TurnAnimationOutcome { complete, cancel }
 
+enum _PageTurnGesturePhase { idle, warming, active, committing }
+
+class _PageTurnGestureHandler {
+  _PageTurnGesturePhase phase = _PageTurnGesturePhase.idle;
+  TurnDirection? direction;
+
+  bool get dragInProgress =>
+      phase == _PageTurnGesturePhase.warming ||
+      phase == _PageTurnGesturePhase.active;
+
+  void start() {
+    // idle -> warming: wait for the first meaningful horizontal drag delta.
+    phase = _PageTurnGesturePhase.warming;
+    direction = null;
+  }
+
+  TurnDirection? updateDirection({
+    required double deltaDx,
+    required int pageIndex,
+    required int pageCount,
+  }) {
+    if (!dragInProgress) {
+      return null;
+    }
+    if (direction != null) {
+      return direction;
+    }
+
+    if (deltaDx < -BookThresholds.coverDragDirectionDelta &&
+        pageIndex < pageCount - 1) {
+      // warming -> active: forward page turn has enough intent.
+      direction = TurnDirection.forward;
+    } else if (deltaDx > BookThresholds.coverDragDirectionDelta &&
+        pageIndex > 0) {
+      // warming -> active: backward page turn has enough intent.
+      direction = TurnDirection.backward;
+    }
+
+    if (direction != null) {
+      phase = _PageTurnGesturePhase.active;
+    }
+    return direction;
+  }
+
+  double progressDelta(double deltaDx, double pageWidth) {
+    if (direction == null || pageWidth <= 0) {
+      return 0;
+    }
+    return direction == TurnDirection.forward
+        ? -deltaDx / pageWidth
+        : deltaDx / pageWidth;
+  }
+
+  void commit() {
+    // active -> committing: release decides whether to complete or cancel.
+    phase = _PageTurnGesturePhase.committing;
+  }
+
+  void reset() {
+    // any state -> idle: used after cancel, complete, restart, or invalid drag.
+    phase = _PageTurnGesturePhase.idle;
+    direction = null;
+  }
+}
+
 class BookExperienceScreen extends StatefulWidget {
   const BookExperienceScreen({super.key});
 
@@ -29,10 +94,8 @@ class _BookExperienceScreenState
   bool _coverHover = false;
   bool _coverPressed = false;
   TurnDirection? _activeTurn;
-  TurnDirection? _dragDirection;
-  bool _dragInProgress = false;
+  final _PageTurnGestureHandler _pageTurnGesture = _PageTurnGestureHandler();
   _TurnAnimationOutcome? _pendingTurnOutcome;
-  double? _pendingWarmupTurnDelta;
 
   @override
   void initState() {
@@ -85,10 +148,8 @@ class _BookExperienceScreenState
       _coverHover = false;
       _coverPressed = false;
       _activeTurn = null;
-      _dragDirection = null;
-      _dragInProgress = false;
+      _pageTurnGesture.reset();
       _pendingTurnOutcome = null;
-      _pendingWarmupTurnDelta = null;
       _turn.value = 0;
     });
 
@@ -106,28 +167,6 @@ class _BookExperienceScreenState
         });
   }
 
-  void _scheduleTurnWarmup(VoidCallback action) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      action();
-    });
-  }
-
-  void _flushPendingWarmupTurnDelta() {
-    final delta = _pendingWarmupTurnDelta;
-    if (delta == null ||
-        !_dragInProgress ||
-        _turn.isAnimating ||
-        _activeTurn == null) {
-      _pendingWarmupTurnDelta = null;
-      return;
-    }
-    _pendingWarmupTurnDelta = null;
-    _turn.value = (_turn.value + delta).clamp(0.0, 1.0);
-  }
-
   void _startButtonTurn(TurnDirection direction) {
     if (_activeTurn != null || _turn.isAnimating || !_bookUnlocked) {
       return;
@@ -141,43 +180,30 @@ class _BookExperienceScreenState
 
     setState(() {
       _activeTurn = direction;
-      _dragDirection = null;
-      _dragInProgress = false;
+      _pageTurnGesture.reset();
       _pendingTurnOutcome = _TurnAnimationOutcome.complete;
-      _pendingWarmupTurnDelta = null;
       _turn.value = 0;
     });
 
-    _scheduleTurnWarmup(() {
-      if (_activeTurn != direction ||
-          _pendingTurnOutcome != _TurnAnimationOutcome.complete ||
-          _turn.isAnimating) {
-        return;
-      }
-      _turn.animateTo(1, curve: Curves.easeOutCubic);
-    });
+    _turn.animateTo(1, curve: Curves.easeOutCubic);
   }
 
   void _finishTurn(TurnDirection direction) {
     setState(() {
       _index += direction == TurnDirection.forward ? 1 : -1;
       _pendingTurnOutcome = null;
-      _pendingWarmupTurnDelta = null;
       _turn.value = 0;
       _activeTurn = null;
-      _dragDirection = null;
-      _dragInProgress = false;
+      _pageTurnGesture.reset();
     });
   }
 
   void _cancelTurn() {
     setState(() {
       _pendingTurnOutcome = null;
-      _pendingWarmupTurnDelta = null;
       _turn.value = 0;
       _activeTurn = null;
-      _dragDirection = null;
-      _dragInProgress = false;
+      _pageTurnGesture.reset();
     });
   }
 
@@ -185,63 +211,50 @@ class _BookExperienceScreenState
     if (_turn.isAnimating || !_bookUnlocked || _activeTurn != null) {
       return;
     }
-    _dragInProgress = true;
-    _dragDirection = null;
+    _pageTurnGesture.start();
     _pendingTurnOutcome = null;
-    _pendingWarmupTurnDelta = null;
     _turn.value = 0;
   }
 
   void _handlePageDragUpdate(DragUpdateDetails details, double pageWidth) {
-    if (!_dragInProgress || _turn.isAnimating || pageWidth <= 0) {
+    if (!_pageTurnGesture.dragInProgress ||
+        _turn.isAnimating ||
+        pageWidth <= 0) {
       return;
     }
 
-    if (_dragDirection == null) {
-      if (details.delta.dx < -BookThresholds.coverDragDirectionDelta &&
-          _index < demoPageCount - 1) {
-        _dragDirection = TurnDirection.forward;
-      } else if (details.delta.dx > BookThresholds.coverDragDirectionDelta &&
-          _index > 0) {
-        _dragDirection = TurnDirection.backward;
-      }
-      if (_dragDirection != null) {
-        final initialDelta = _dragDirection == TurnDirection.forward
-            ? -details.delta.dx / pageWidth
-            : details.delta.dx / pageWidth;
-        setState(() {
-          _activeTurn = _dragDirection;
-          _pendingWarmupTurnDelta = null;
-          _turn.value = (_turn.value + initialDelta).clamp(0.0, 1.0);
-        });
-        return;
-      }
-    }
-
-    if (_dragDirection == null) {
+    final direction = _pageTurnGesture.updateDirection(
+      deltaDx: details.delta.dx,
+      pageIndex: _index,
+      pageCount: demoPageCount,
+    );
+    if (direction == null) {
       return;
     }
 
-    final delta = _dragDirection == TurnDirection.forward
-        ? -details.delta.dx / pageWidth
-        : details.delta.dx / pageWidth;
+    final delta = _pageTurnGesture.progressDelta(details.delta.dx, pageWidth);
+    final value = (_turn.value + delta).clamp(0.0, 1.0);
 
-    if (_pendingWarmupTurnDelta != null) {
-      _pendingWarmupTurnDelta = _pendingWarmupTurnDelta! + delta;
+    if (_activeTurn == null) {
+      setState(() {
+        _activeTurn = direction;
+        _turn.value = value;
+      });
       return;
     }
 
-    _turn.value = (_turn.value + delta).clamp(0.0, 1.0);
+    _turn.value = value;
   }
 
   void _handlePageDragEnd(DragEndDetails details) {
-    if (!_dragInProgress || _dragDirection == null || _activeTurn == null) {
-      _dragInProgress = false;
-      _pendingWarmupTurnDelta = null;
+    if (!_pageTurnGesture.dragInProgress ||
+        _pageTurnGesture.direction == null ||
+        _activeTurn == null) {
+      _pageTurnGesture.reset();
       return;
     }
 
-    _flushPendingWarmupTurnDelta();
+    _pageTurnGesture.commit();
     final shouldFinish = _turn.value > BookThresholds.pageTurnCommitProgress;
     _pendingTurnOutcome = shouldFinish
         ? _TurnAnimationOutcome.complete

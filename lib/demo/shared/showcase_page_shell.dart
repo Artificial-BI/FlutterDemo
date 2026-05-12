@@ -138,8 +138,8 @@ class _ShowcasePageShellState
                                 ),
                                 border: Border.all(
                                   color: Colors.white.withValues(
-                                    alpha:
-                                        ShowcasePageShellTokens.panelBorderAlpha,
+                                    alpha: ShowcasePageShellTokens
+                                        .panelBorderAlpha,
                                   ),
                                 ),
                               ),
@@ -202,8 +202,9 @@ class _ShowcasePageShellState
                           ),
                         ),
                         SizedBox(
-                          height:
-                              layout.veryShort ? 4 : (layout.short ? 6 : 10),
+                          height: layout.veryShort
+                              ? 4
+                              : (layout.short ? 6 : 10),
                         ),
                         Text(
                           widget.hint,

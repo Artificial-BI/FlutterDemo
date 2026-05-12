@@ -211,15 +211,13 @@ class _VolumeControlPageState
                                     shape: BoxShape.circle,
                                     border: Border.all(
                                       color: const Color(0xFFFFA96C).withValues(
-                                        alpha: (_VolumeDialTokens.pulseRingAlpha *
-                                                (1 - pulse))
-                                            .clamp(
-                                          0.0,
-                                          1.0,
-                                        ),
+                                        alpha:
+                                            (_VolumeDialTokens.pulseRingAlpha *
+                                                    (1 - pulse))
+                                                .clamp(0.0, 1.0),
                                       ),
-                                      width:
-                                          _VolumeDialTokens.pulseRingStrokeWidth,
+                                      width: _VolumeDialTokens
+                                          .pulseRingStrokeWidth,
                                     ),
                                   ),
                                 ),
@@ -252,8 +250,8 @@ class _VolumeControlPageState
                                       boxShadow: [
                                         BoxShadow(
                                           color: Colors.black.withValues(
-                                            alpha:
-                                                _VolumeDialTokens.knobShadowAlpha,
+                                            alpha: _VolumeDialTokens
+                                                .knobShadowAlpha,
                                           ),
                                           blurRadius:
                                               _VolumeDialTokens.knobShadowBlur *
@@ -272,8 +270,9 @@ class _VolumeControlPageState
                                         alignment: Alignment.topCenter,
                                         child: Container(
                                           margin: EdgeInsets.only(
-                                            top: _VolumeDialTokens
-                                                .indicatorTopInset *
+                                            top:
+                                                _VolumeDialTokens
+                                                    .indicatorTopInset *
                                                 scale,
                                           ),
                                           width: max(
@@ -283,7 +282,8 @@ class _VolumeControlPageState
                                                 scale,
                                           ),
                                           height:
-                                              _VolumeDialTokens.indicatorHeight *
+                                              _VolumeDialTokens
+                                                  .indicatorHeight *
                                               scale,
                                           decoration: BoxDecoration(
                                             borderRadius: BorderRadius.circular(

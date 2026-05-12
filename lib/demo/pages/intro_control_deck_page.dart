@@ -363,9 +363,9 @@ class _DeckHeader extends StatelessWidget {
               vertical: compact ? 9 : 10,
             ),
             borderRadius: compact ? 12 : 14,
-            background: const Color(0xFF5BDFFF).withValues(
-              alpha: _IntroDeckTokens.actionButtonAlpha,
-            ),
+            background: const Color(
+              0xFF5BDFFF,
+            ).withValues(alpha: _IntroDeckTokens.actionButtonAlpha),
             child: Text(expanded ? 'Collapse' : 'Expand'),
           ),
         ),
@@ -390,9 +390,9 @@ class _DeckToggle extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         color: enabled
-            ? const Color(0xFF66FFE0).withValues(
-                alpha: _IntroDeckTokens.enabledToggleAlpha,
-              )
+            ? const Color(
+                0xFF66FFE0,
+              ).withValues(alpha: _IntroDeckTokens.enabledToggleAlpha)
             : Colors.white.withValues(
                 alpha: _IntroDeckTokens.disabledToggleAlpha,
               ),
